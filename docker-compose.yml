@@ -1,0 +1,58 @@
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: k6-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+    healthcheck:
+      test:
+        ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -proot || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  postgresql:
+    image: postgres:16
+    container_name: k6-postgresql
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  k6-sql:
+    build:
+      context: .
+      dockerfile: docker/k6-sql/Dockerfile
+    container_name: k6-sql
+    depends_on:
+      mysql:
+        condition: service_healthy
+      postgresql:
+        condition: service_healthy
+    volumes:
+      - ./tests:/tests:ro
+      - ./results:/results:rw
+    environment:
+      MYSQL_ADMIN_DSN: root:root@tcp(mysql:3306)/
+      MYSQL_TEST_DSN: root:root@tcp(mysql:3306)/k6_perf_test
+      PG_ADMIN_DSN: postgres://postgres:postgres@postgresql:5432/postgres?sslmode=disable
+      PG_TEST_DSN: postgres://postgres:postgres@postgresql:5432/k6_perf_test?sslmode=disable
+    command: ["run", "/tests/simple-mysql-test.js"]
+
+  sysbench:
+    image: perconalab/sysbench:latest
+    container_name: sysbench
+    depends_on:
+      mysql:
+        condition: service_healthy
+      postgresql:
+        condition: service_healthy
+    volumes:
+      - ./sysbench:/tests:ro
+    entrypoint: ["sysbench"]
