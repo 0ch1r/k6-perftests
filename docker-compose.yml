@@ -1,9 +1,16 @@
+networks:
+  k6-network:
+    driver: bridge
+
 services:
   mysql:
-    image: mysql:8.4
+    image: mysql:8.0
     container_name: k6-mysql
+    networks:
+      - k6-network
     environment:
       MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: sbtest
     healthcheck:
       test:
         ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -proot || exit 1"]
@@ -15,6 +22,8 @@ services:
   postgresql:
     image: postgres:16
     container_name: k6-postgresql
+    networks:
+      - k6-network
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
@@ -30,13 +39,15 @@ services:
       context: .
       dockerfile: docker/k6-sql/Dockerfile
     container_name: k6-sql
+    networks:
+      - k6-network
     depends_on:
       mysql:
         condition: service_healthy
       postgresql:
         condition: service_healthy
     volumes:
-      - ./tests:/tests:ro
+      - ./k6-tests:/tests:ro
       - ./results:/results:rw
     environment:
       MYSQL_ADMIN_DSN: root:root@tcp(mysql:3306)/
@@ -48,6 +59,8 @@ services:
   sysbench:
     image: perconalab/sysbench:latest
     container_name: sysbench
+    networks:
+      - k6-network
     depends_on:
       mysql:
         condition: service_healthy

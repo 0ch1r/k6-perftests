@@ -63,6 +63,11 @@ docker compose run --rm sysbench \
 
 ### 1) Simple SQL test
 
+A basic functional validation test that creates a database and table, seeds two rows,
+performs timed SELECT queries with **k6/check** assertions, and cleans up in teardown.
+Designed to validate that the database is reachable and returns the expected number of
+rows. Low footprint: 1 VU, 5 iterations.
+
 MySQL:
 
 ```bash
@@ -76,6 +81,11 @@ docker compose run --rm k6-sql run /tests/simple-postgresql-test.js
 ```
 
 ### 2) Barebones connectivity tests
+
+The simplest possible connectivity check — creates a minimal schema, runs a SELECT,
+and records query duration / error metrics **without** k6/check assertions.
+Ideal for initial smoke-testing of database connectivity and raw query timing.
+Low footprint: 1 VU, 5 iterations.
 
 MySQL:
 
@@ -91,6 +101,11 @@ docker compose run --rm k6-sql run /tests/simple-postgresql-barebones.js
 
 ### 3) SQL thresholds test (latency + errors)
 
+A performance benchmarking test that defines explicit **SLA thresholds** on query
+latency and error rate. The test fails if p(95) latency exceeds 200ms, average
+latency exceeds 100ms, or the error rate exceeds 1%. Runs with 5 VUs for 30 seconds
+and uses custom Trend/Rate metrics with k6/check validation.
+
 MySQL:
 
 ```bash
@@ -104,6 +119,12 @@ docker compose run --rm k6-sql run /tests/sql-threshold-postgresql-test.js
 ```
 
 ### 4) OLTP-style read/write test
+
+A highly configurable Sysbench-like OLTP workload supporting both MySQL and PostgreSQL
+(via the `DB_ENGINE` env var). Groups point selects, range selects, aggregate selects,
+key-value updates, and optional delete/insert operations into ACID transactions
+(BEGIN…COMMIT). Supports tuning transaction mix, seed dataset size, batch size, and
+periodic interval reporting. Defaults to 10 VUs for 1 minute with configurable thresholds.
 
 MySQL (default):
 
@@ -158,7 +179,13 @@ docker compose run --rm \
 
 ### 5) MySQL complex SELECT test against `orders`
 
-This test does not create or clean up schema. It expects the `orders` table from `sysbench/custom-oltp.lua` to already exist and contain data.
+An analytical workload that executes a heavy SQL query against a pre-existing `orders` table:
+aggregates (COUNT, SUM, AVG, MIN, MAX), EXISTS subqueries, GROUP BY, HAVING, and sorting.
+Uses k6's **staged ramp-up** to simulate varying load patterns including a spike.
+Parameters in VU/iteration values to prevent identical cache hits.
+
+> This test does not create or clean up schema. It expects the `orders` table from
+> `sysbench/custom-oltp.lua` to already exist and contain data.
 
 Run the staged k6 workload:
 
@@ -189,11 +216,16 @@ docker compose run --rm sysbench \
 
 ### 6) Multi-scenario staged workload across different tables
 
-This test creates its own schema and runs three scenarios in parallel:
+A comprehensive multi-table workload using k6 **scenarios** with independent ramp-up
+schedules. Creates its own schema (`accounts`, `orders`, `inventory`) and seeds data,
+then runs three scenarios in parallel:
 
-- `accounts_readers`: read-heavy lookups on `accounts`
-- `orders_writers`: insert + recent-read traffic on `orders`
-- `inventory_rebalancers`: transactional updates on `inventory`
+- `accounts_readers` — read-heavy lookups filtered by tenant/status with sorting
+- `orders_writers` — insert + recent-order lookups (e-commerce checkout simulation)
+- `inventory_rebalancers` — transactional updates rebalancing stock between available
+  and reserved states (BEGIN/COMMIT/ROLLBACK)
+
+Useful for testing concurrent access patterns and resource contention on different tables.
 
 Run against MySQL:
 
